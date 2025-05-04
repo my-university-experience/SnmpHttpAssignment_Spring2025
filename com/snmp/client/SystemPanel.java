@@ -1,92 +1,134 @@
 package com.snmp.client;
 
+import org.json.JSONObject;
 import javax.swing.*;
+import javax.swing.table.DefaultTableModel;
 import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
 
-// System Panel (Tab 1)
 public class SystemPanel extends JPanel {
-    private HttpConnection httpConnection;
-    private JTextArea dataDisplay;
-    private JTextField sysContactField, sysNameField, sysLocationField;
-    private JButton getDataButton, updateContactButton, updateNameButton, updateLocationButton;
+    private JTable systemTable;
+    private DefaultTableModel tableModel;
+    private JTextField contactField, nameField, locationField;
+    private JButton updateContactBtn, updateNameBtn, updateLocationBtn, refreshBtn;
+    private HttpConnection connection;
 
-    public SystemPanel(HttpConnection httpConnection) {
-        this.httpConnection = httpConnection;
-        setLayout(new BorderLayout());
+    public SystemPanel() {
+        connection = new HttpConnection();
+        initializeUI();
+    }
 
-        // Create components
-        dataDisplay = new JTextArea();
-        dataDisplay.setEditable(false);
-        JScrollPane scrollPane = new JScrollPane(dataDisplay);
+    private void initializeUI() {
+        setLayout(new BorderLayout(10, 10));
 
-        JPanel controlPanel = new JPanel(new GridLayout(4, 3));
+        // Create table for system info
+        String[] columnNames = {"Property", "Value", "Description"};
+        tableModel = new DefaultTableModel(columnNames, 0);
+        systemTable = new JTable(tableModel);
+        systemTable.setRowHeight(30);
+        systemTable.getTableHeader().setFont(new Font("SansSerif", Font.BOLD, 14));
 
-        getDataButton = new JButton("Get System Data");
-        sysContactField = new JTextField(20);
-        sysNameField = new JTextField(20);
-        sysLocationField = new JTextField(20);
-        updateContactButton = new JButton("Update Contact");
-        updateNameButton = new JButton("Update Name");
-        updateLocationButton = new JButton("Update Location");
-
-        // Add components to panels
-        controlPanel.add(new JLabel("System Contact:"));
-        controlPanel.add(sysContactField);
-        controlPanel.add(updateContactButton);
-
-        controlPanel.add(new JLabel("System Name:"));
-        controlPanel.add(sysNameField);
-        controlPanel.add(updateNameButton);
-
-        controlPanel.add(new JLabel("System Location:"));
-        controlPanel.add(sysLocationField);
-        controlPanel.add(updateLocationButton);
-
-        controlPanel.add(getDataButton);
-
-        // Add panels to main panel
+        JScrollPane scrollPane = new JScrollPane(systemTable);
         add(scrollPane, BorderLayout.CENTER);
-        add(controlPanel, BorderLayout.SOUTH);
 
-        // Add action listeners
-        getDataButton.addActionListener(e -> {
-            String data = httpConnection.getSystemData();
-            dataDisplay.setText(data);
+        // Create editable fields panel
+        JPanel editPanel = new JPanel(new GridLayout(4, 3, 5, 5));
+        editPanel.setBorder(BorderFactory.createTitledBorder("Update System Information"));
 
-            // Parse data to update fields
-            for (String line : data.split("\n")) {
-                if (line.contains("System Contact:")) {
-                    sysContactField.setText(line.substring(line.indexOf(":") + 1).trim());
-                } else if (line.contains("System Name:")) {
-                    sysNameField.setText(line.substring(line.indexOf(":") + 1).trim());
-                } else if (line.contains("System Location:")) {
-                    sysLocationField.setText(line.substring(line.indexOf(":") + 1).trim());
-                }
+        editPanel.add(new JLabel("System Contact:"));
+        contactField = new JTextField();
+        editPanel.add(contactField);
+        updateContactBtn = new JButton("Update Contact");
+        editPanel.add(updateContactBtn);
+
+        editPanel.add(new JLabel("System Name:"));
+        nameField = new JTextField();
+        editPanel.add(nameField);
+        updateNameBtn = new JButton("Update Name");
+        editPanel.add(updateNameBtn);
+
+        editPanel.add(new JLabel("System Location:"));
+        locationField = new JTextField();
+        editPanel.add(locationField);
+        updateLocationBtn = new JButton("Update Location");
+        editPanel.add(updateLocationBtn);
+
+        refreshBtn = new JButton("Get System Data");
+        editPanel.add(new JLabel(""));
+        editPanel.add(refreshBtn);
+
+        add(editPanel, BorderLayout.SOUTH);
+
+        // Add event listeners
+        refreshBtn.addActionListener(e -> fetchSystemData());
+
+        updateContactBtn.addActionListener(e -> updateSystemValue("sysContact", contactField.getText()));
+        updateNameBtn.addActionListener(e -> updateSystemValue("sysName", nameField.getText()));
+        updateLocationBtn.addActionListener(e -> updateSystemValue("sysLocation", locationField.getText()));
+    }
+
+    public void fetchSystemData() {
+        try {
+            JSONObject response = connection.getSystemData();
+
+            if (response.getBoolean("success")) {
+                // Clear table
+                tableModel.setRowCount(0);
+
+                JSONObject data = response.getJSONObject("data");
+                JSONObject values = data.getJSONObject("values");
+                JSONObject descriptions = data.getJSONObject("descriptions");
+
+                // Add rows to table
+                addSystemRow("System Description", values.getString("sysDescr"),
+                        descriptions.getString("sysDescr"));
+                addSystemRow("System Object ID", values.getString("sysObjectID"),
+                        descriptions.getString("sysObjectID"));
+                addSystemRow("System Uptime", values.getString("sysUpTime"),
+                        descriptions.getString("sysUpTime"));
+                addSystemRow("System Contact", values.getString("sysContact"),
+                        descriptions.getString("sysContact"));
+                addSystemRow("System Name", values.getString("sysName"),
+                        descriptions.getString("sysName"));
+                addSystemRow("System Location", values.getString("sysLocation"),
+                        descriptions.getString("sysLocation"));
+
+                // Update editable fields
+                contactField.setText(values.getString("sysContact"));
+                nameField.setText(values.getString("sysName"));
+                locationField.setText(values.getString("sysLocation"));
+            } else {
+                JOptionPane.showMessageDialog(this, "Error: " + response.getString("message"),
+                        "SNMP Error", JOptionPane.ERROR_MESSAGE);
             }
-        });
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, "Error: " + ex.getMessage(),
+                    "Connection Error", JOptionPane.ERROR_MESSAGE);
+            ex.printStackTrace();
+        }
+    }
 
-        updateContactButton.addActionListener(e -> {
-            String newContact = sysContactField.getText();
-            String result = httpConnection.updateSystemValue("sysContact", newContact);
-            JOptionPane.showMessageDialog(this, result);
-            // Refresh data after update
-            getDataButton.doClick();
-        });
+    private void addSystemRow(String property, String value, String description) {
+        tableModel.addRow(new Object[]{property, value, description});
+    }
 
-        updateNameButton.addActionListener(e -> {
-            String newName = sysNameField.getText();
-            String result = httpConnection.updateSystemValue("sysName", newName);
-            JOptionPane.showMessageDialog(this, result);
-            // Refresh data after update
-            getDataButton.doClick();
-        });
+    private void updateSystemValue(String property, String value) {
+        try {
+            JSONObject response = connection.updateSystemValue(property, value);
 
-        updateLocationButton.addActionListener(e -> {
-            String newLocation = sysLocationField.getText();
-            String result = httpConnection.updateSystemValue("sysLocation", newLocation);
-            JOptionPane.showMessageDialog(this, result);
-            // Refresh data after update
-            getDataButton.doClick();
-        });
+            if (response.getBoolean("success")) {
+                JOptionPane.showMessageDialog(this, "Successfully updated " + property,
+                        "Update Successful", JOptionPane.INFORMATION_MESSAGE);
+                fetchSystemData(); // Refresh data
+            } else {
+                JOptionPane.showMessageDialog(this, "Error: " + response.getString("message"),
+                        "Update Failed", JOptionPane.ERROR_MESSAGE);
+            }
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, "Error: " + ex.getMessage(),
+                    "Connection Error", JOptionPane.ERROR_MESSAGE);
+            ex.printStackTrace();
+        }
     }
 }
